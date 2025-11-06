@@ -2,9 +2,10 @@
  * App Context for managing global state (meals, settings, etc.)
  */
 
-import React, { createContext, useContext, useReducer, useMemo, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, useMemo, ReactNode, useEffect } from 'react';
 import { AppState, AppAction, MealEntry, UserSettings } from '@/types';
-import { DEFAULT_SETTINGS, SAMPLE_MEALS } from '@/constants/mockData';
+import { DEFAULT_SETTINGS } from '@/constants/mockData';
+import * as StorageService from '@/services/storage-service';
 
 // Calculate totals from meals
 const calculateTotals = (meals: MealEntry[]) => {
@@ -19,11 +20,14 @@ const calculateTotals = (meals: MealEntry[]) => {
   );
 };
 
-// Initial state
+// Initial state (will be loaded from storage)
 const initialState: AppState = {
-  meals: SAMPLE_MEALS,
+  meals: [],
   settings: DEFAULT_SETTINGS,
-  ...calculateTotals(SAMPLE_MEALS),
+  totalCalories: 0,
+  totalProtein: 0,
+  totalCarbs: 0,
+  totalFat: 0,
 };
 
 // Reducer function
@@ -109,6 +113,56 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 // Provider component
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(appReducer, initialState);
+  const [isInitialized, setIsInitialized] = React.useState(false);
+
+  // Load data from AsyncStorage on mount
+  useEffect(() => {
+    const loadInitialData = async () => {
+      try {
+        // Load meals for today
+        const meals = await StorageService.loadMeals(new Date());
+
+        // Load settings
+        const savedSettings = await StorageService.loadSettings();
+        const settings = savedSettings || DEFAULT_SETTINGS;
+
+        // Dispatch loaded data
+        if (savedSettings) {
+          dispatch({ type: 'UPDATE_SETTINGS', payload: settings });
+        }
+
+        // Load meals one by one to trigger recalculation
+        meals.forEach(meal => {
+          dispatch({ type: 'ADD_MEAL', payload: meal });
+        });
+
+        setIsInitialized(true);
+      } catch (error) {
+        console.error('Error loading initial data:', error);
+        setIsInitialized(true);
+      }
+    };
+
+    loadInitialData();
+  }, []);
+
+  // Save meals to AsyncStorage whenever they change
+  useEffect(() => {
+    if (isInitialized && state.meals.length >= 0) {
+      StorageService.saveMeals(state.meals, new Date()).catch(error => {
+        console.error('Error saving meals:', error);
+      });
+    }
+  }, [state.meals, isInitialized]);
+
+  // Save settings to AsyncStorage whenever they change
+  useEffect(() => {
+    if (isInitialized) {
+      StorageService.saveSettings(state.settings).catch(error => {
+        console.error('Error saving settings:', error);
+      });
+    }
+  }, [state.settings, isInitialized]);
 
   // Helper functions
   const addMeal = (meal: Omit<MealEntry, 'id' | 'timestamp'>) => {

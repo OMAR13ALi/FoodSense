@@ -22,6 +22,7 @@ import { CalorieProgressBar } from '@/components/CalorieProgressBar';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { NutritionDetailsModal } from '@/components/NutritionDetailsModal';
 import { MealEntry } from '@/types';
+import { analyzeNutrition } from '@/services/ai-service';
 
 interface LineCalories {
   [lineIndex: number]: {
@@ -75,50 +76,76 @@ export default function DashboardScreen() {
       }
 
       // Start debounce timer for this line
-      debounceTimerRef.current[index] = setTimeout(() => {
+      debounceTimerRef.current[index] = setTimeout(async () => {
         // Start calculation
         setLineCalories(prev => ({
           ...prev,
           [index]: { calories: 0, protein: 0, carbs: 0, fat: 0, mealId: '', status: 'calculating' },
         }));
 
-        // Show "sources" after 500ms
-        setTimeout(() => {
-          setLineCalories(prev => ({
-            ...prev,
-            [index]: { ...prev[index], status: 'sources' },
-          }));
-
-          // Calculate and show calories after another 800ms
+        try {
+          // Show "sources" status
           setTimeout(() => {
-            const mockCalories = Math.floor(Math.random() * 500) + 200;
-            const mockProtein = Math.floor(Math.random() * 30) + 10;
-            const mockCarbs = Math.floor(Math.random() * 50) + 20;
-            const mockFat = Math.floor(Math.random() * 20) + 5;
-            const mealId = Date.now().toString() + '-' + index;
-
             setLineCalories(prev => ({
               ...prev,
-              [index]: {
-                calories: mockCalories,
-                protein: mockProtein,
-                carbs: mockCarbs,
-                fat: mockFat,
-                mealId,
-                status: 'done',
-              },
+              [index]: { ...prev[index], status: 'sources' },
             }));
+          }, 300);
 
-            // Add to meal list in context
-            addMeal({
-              text: trimmedLine,
-              calories: mockCalories,
-              protein: mockProtein,
-              carbs: mockCarbs,
-              fat: mockFat,
-            });
-          }, 800);
-        }, 500);
+          // Call real AI API
+          const result = await analyzeNutrition(trimmedLine);
+
+          const mealId = Date.now().toString() + '-' + index;
+
+          setLineCalories(prev => ({
+            ...prev,
+            [index]: {
+              calories: result.calories,
+              protein: result.protein,
+              carbs: result.carbs,
+              fat: result.fat,
+              mealId,
+              status: 'done',
+            },
+          }));
+
+          // Add to meal list in context with AI metadata
+          addMeal({
+            text: trimmedLine,
+            calories: result.calories,
+            protein: result.protein,
+            carbs: result.carbs,
+            fat: result.fat,
+            aiExplanation: result.explanation,
+            confidence: result.confidence,
+            sources: result.sources,
+          });
+        } catch (error: any) {
+          console.error('AI analysis error:', error);
+
+          // Show error state
+          setLineCalories(prev => ({
+            ...prev,
+            [index]: {
+              calories: 0,
+              protein: 0,
+              carbs: 0,
+              fat: 0,
+              mealId: '',
+              status: 'done',
+            },
+          }));
+
+          // Add meal with error
+          addMeal({
+            text: trimmedLine,
+            calories: 0,
+            protein: 0,
+            carbs: 0,
+            fat: 0,
+            error: error.message || 'Failed to analyze nutrition',
+          });
+        }
       }, 800);
     });
 

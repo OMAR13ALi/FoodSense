@@ -66,8 +66,12 @@ export const NutritionDetailsModal: React.FC<NutritionDetailsModalProps> = ({
     setIsEditing(false);
   };
 
-  // Generate AI explanation
-  const aiExplanation = `I searched specifically for nutrition information on an In-N-Out "${meal.text}" and you are in San Francisco, CA. I found direct nutrition data directly from In-N-Out sources and reputable nutrition databases. A standard In-N-Out Hamburger contains about ${meal.calories} calories, ${meal.carbs || 0} grams of carbs, ${meal.fat || 0} grams of fat, and ${meal.protein || 0} grams of protein. Since you only mentioned "${meal.text}", I used the standard data. This is the most accurate based on the available data.`;
+  // Use AI explanation from meal or fallback to default
+  const aiExplanation = meal.aiExplanation ||
+    `Analyzed "${meal.text}" and estimated ${meal.calories} calories based on standard portion sizes and nutrition databases.`;
+
+  // Check if there's an error
+  const hasError = !!meal.error;
 
   return (
     <Modal
@@ -187,23 +191,65 @@ export const NutritionDetailsModal: React.FC<NutritionDetailsModalProps> = ({
                 <Text style={[styles.sectionTitle, { color: '#666666' }]}>Items</Text>
                 <View style={styles.itemRow}>
                   <Text style={[styles.itemText, { color: '#000000' }]}>
-                    In-N-Out Hamburger
+                    {meal.text}
                   </Text>
                   <Text style={[styles.itemCalories, { color: '#666666' }]}>
                     {meal.calories} cal
                   </Text>
                 </View>
 
+                {/* Error Message (if any) */}
+                {hasError && (
+                  <>
+                    <Text style={[styles.sectionTitle, { color: '#FF6B6B' }]}>
+                      Analysis Error
+                    </Text>
+                    <View style={[styles.aiContainer, { backgroundColor: '#FFF0F0' }]}>
+                      <Text style={styles.aiEmoji}>⚠️</Text>
+                      <Text style={[styles.aiText, { color: '#FF6B6B' }]}>
+                        {meal.error}
+                      </Text>
+                    </View>
+                  </>
+                )}
+
                 {/* AI Thought Process */}
-                <Text style={[styles.sectionTitle, { color: '#666666' }]}>
-                  Amy's thought process
-                </Text>
-                <View style={styles.aiContainer}>
-                  <Text style={styles.aiEmoji}>🧠</Text>
-                  <Text style={[styles.aiText, { color: '#666666' }]}>
-                    {aiExplanation}
-                  </Text>
-                </View>
+                {!hasError && (
+                  <>
+                    <Text style={[styles.sectionTitle, { color: '#666666' }]}>
+                      AI Analysis
+                    </Text>
+                    <View style={styles.aiContainer}>
+                      <Text style={styles.aiEmoji}>🧠</Text>
+                      <Text style={[styles.aiText, { color: '#666666' }]}>
+                        {aiExplanation}
+                      </Text>
+                    </View>
+
+                    {/* Confidence Score */}
+                    {meal.confidence !== undefined && (
+                      <View style={styles.confidenceContainer}>
+                        <Text style={[styles.confidenceLabel, { color: '#666666' }]}>
+                          Confidence: {Math.round(meal.confidence * 100)}%
+                        </Text>
+                      </View>
+                    )}
+
+                    {/* Sources */}
+                    {meal.sources && meal.sources.length > 0 && (
+                      <>
+                        <Text style={[styles.sectionTitle, { color: '#666666' }]}>
+                          Sources
+                        </Text>
+                        {meal.sources.map((source, index) => (
+                          <Text key={index} style={[styles.sourceText, { color: '#666666' }]}>
+                            • {source}
+                          </Text>
+                        ))}
+                      </>
+                    )}
+                  </>
+                )}
               </>
             )}
 
@@ -418,5 +464,18 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     backgroundColor: '#FFFFFF',
+  },
+  confidenceContainer: {
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  confidenceLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  sourceText: {
+    fontSize: 14,
+    marginBottom: 4,
+    paddingLeft: 8,
   },
 });

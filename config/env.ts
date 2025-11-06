@@ -1,0 +1,68 @@
+/**
+ * Environment Configuration
+ * Manages API keys and provider selection
+ */
+
+// Note: In React Native, we need to access environment variables differently
+// For now, we'll use a simple config object that can be easily modified
+// In production, consider using expo-constants with app.config.js
+
+export type AIProvider = 'openrouter' | 'perplexity';
+
+interface EnvConfig {
+  aiProvider: AIProvider;
+  openRouter: {
+    apiKey: string;
+    model: string;
+    baseURL: string;
+  };
+  perplexity: {
+    apiKey: string;
+    model: string;
+    baseURL: string;
+  };
+  debugMode: boolean;
+}
+
+// TODO: Replace these placeholder keys with your actual API keys
+// For security, consider using expo-secure-store for production
+const config: EnvConfig = {
+  // Toggle between 'openrouter' and 'perplexity'
+  aiProvider: 'openrouter',
+
+  openRouter: {
+    apiKey: process.env.OPENROUTER_API_KEY || 'YOUR_OPENROUTER_API_KEY',
+    model: 'google/gemini-2.0-flash-exp:free',
+    baseURL: 'https://openrouter.ai/api/v1',
+  },
+
+  perplexity: {
+    apiKey: process.env.PERPLEXITY_API_KEY || 'YOUR_PERPLEXITY_API_KEY',
+    model: 'llama-3.1-sonar-small-128k-online',
+    baseURL: 'https://api.perplexity.ai',
+  },
+
+  debugMode: true,
+};
+
+export default config;
+
+// Helper to get current provider config
+export const getCurrentProviderConfig = () => {
+  const { aiProvider } = config;
+  if (aiProvider === 'openrouter') {
+    return {
+      provider: 'openrouter' as const,
+      apiKey: config.openRouter.apiKey,
+      model: config.openRouter.model,
+      baseURL: config.openRouter.baseURL,
+    };
+  } else {
+    return {
+      provider: 'perplexity' as const,
+      apiKey: config.perplexity.apiKey,
+      model: config.perplexity.model,
+      baseURL: config.perplexity.baseURL,
+    };
+  }
+};
