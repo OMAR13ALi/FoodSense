@@ -1,98 +1,314 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+/**
+ * Dashboard Screen - Apple Notes style free-writing interface
+ */
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useApp } from '@/contexts/AppContext';
+import { COLORS } from '@/constants/mockData';
+import { CalorieProgressBar } from '@/components/CalorieProgressBar';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { NutritionDetailsModal } from '@/components/NutritionDetailsModal';
+import { MealEntry } from '@/types';
 
-export default function HomeScreen() {
+interface LineCalories {
+  [lineIndex: number]: {
+    calories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+    mealId: string;
+    status: 'idle' | 'calculating' | 'sources' | 'done';
+  };
+}
+
+export default function DashboardScreen() {
+  const colorScheme = useColorScheme();
+  const colors = COLORS[colorScheme ?? 'light'];
+  const router = useRouter();
+
+  const { state, addMeal, updateMeal } = useApp();
+  const [text, setText] = useState('');
+  const [lineCalories, setLineCalories] = useState<LineCalories>({});
+  const [currentLine, setCurrentLine] = useState(0);
+  const [selectedMeal, setSelectedMeal] = useState<MealEntry | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const debounceTimerRef = useRef<{ [key: number]: NodeJS.Timeout }>({});
+  const textInputRef = useRef<TextInput>(null);
+
+  // Parse text into lines
+  const lines = text.split('\n');
+
+  // Calculate current line based on cursor position
+  const handleSelectionChange = (event: any) => {
+    const { selection } = event.nativeEvent;
+    const textBeforeCursor = text.substring(0, selection.start);
+    const lineIndex = textBeforeCursor.split('\n').length - 1;
+    setCurrentLine(lineIndex);
+  };
+
+  // Auto-calculate calories for a line when user stops typing
+  useEffect(() => {
+    lines.forEach((line, index) => {
+      const trimmedLine = line.trim();
+
+      // Skip empty lines or already calculated lines
+      if (!trimmedLine || lineCalories[index]?.status === 'done') {
+        return;
+      }
+
+      // Clear existing timer for this line
+      if (debounceTimerRef.current[index]) {
+        clearTimeout(debounceTimerRef.current[index]);
+      }
+
+      // Start debounce timer for this line
+      debounceTimerRef.current[index] = setTimeout(() => {
+        // Start calculation
+        setLineCalories(prev => ({
+          ...prev,
+          [index]: { calories: 0, protein: 0, carbs: 0, fat: 0, mealId: '', status: 'calculating' },
+        }));
+
+        // Show "sources" after 500ms
+        setTimeout(() => {
+          setLineCalories(prev => ({
+            ...prev,
+            [index]: { ...prev[index], status: 'sources' },
+          }));
+
+          // Calculate and show calories after another 800ms
+          setTimeout(() => {
+            const mockCalories = Math.floor(Math.random() * 500) + 200;
+            const mockProtein = Math.floor(Math.random() * 30) + 10;
+            const mockCarbs = Math.floor(Math.random() * 50) + 20;
+            const mockFat = Math.floor(Math.random() * 20) + 5;
+            const mealId = Date.now().toString() + '-' + index;
+
+            setLineCalories(prev => ({
+              ...prev,
+              [index]: {
+                calories: mockCalories,
+                protein: mockProtein,
+                carbs: mockCarbs,
+                fat: mockFat,
+                mealId,
+                status: 'done',
+              },
+            }));
+
+            // Add to meal list in context
+            addMeal({
+              text: trimmedLine,
+              calories: mockCalories,
+              protein: mockProtein,
+              carbs: mockCarbs,
+              fat: mockFat,
+            });
+          }, 800);
+        }, 500);
+      }, 800);
+    });
+
+    return () => {
+      Object.values(debounceTimerRef.current).forEach(timer => {
+        if (timer) clearTimeout(timer);
+      });
+    };
+  }, [text]);
+
+  const navigateToSettings = () => {
+    router.push('/(tabs)/settings');
+  };
+
+  const handleCalorieTap = (lineIndex: number) => {
+    const lineData = lineCalories[lineIndex];
+    if (!lineData || lineData.status !== 'done') return;
+
+    const lineMeal = state.meals.find(m => m.text === lines[lineIndex].trim());
+    if (lineMeal) {
+      setSelectedMeal(lineMeal);
+      setModalVisible(true);
+    }
+  };
+
+  const handleMealUpdate = (updates: Partial<MealEntry>) => {
+    if (selectedMeal) {
+      updateMeal(selectedMeal.id, updates);
+
+      // Update lineCalories if needed
+      const lineIndex = lines.findIndex(line => line.trim() === selectedMeal.text);
+      if (lineIndex !== -1 && updates.calories !== undefined) {
+        setLineCalories(prev => ({
+          ...prev,
+          [lineIndex]: {
+            ...prev[lineIndex],
+            calories: updates.calories!,
+            protein: updates.protein || prev[lineIndex].protein,
+            carbs: updates.carbs || prev[lineIndex].carbs,
+            fat: updates.fat || prev[lineIndex].fat,
+          },
+        }));
+      }
+    }
+  };
+
+  const handleModalClose = () => {
+    setModalVisible(false);
+    setSelectedMeal(null);
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardView}
+      >
+        {/* Top Bar */}
+        <View style={styles.topBar}>
+          <Text style={[styles.todayText, { color: colors.text }]}>Today</Text>
+          <Pressable onPress={navigateToSettings} style={styles.iconButton}>
+            <IconSymbol name="gearshape.fill" size={24} color={colors.text} />
+          </Pressable>
+        </View>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+        {/* Full Screen Text Editor */}
+        <View style={styles.editorContainer}>
+          <TextInput
+            ref={textInputRef}
+            style={[
+              styles.textEditor,
+              {
+                backgroundColor: colors.background,
+                color: colors.text,
+              },
+            ]}
+            multiline
+            placeholder=""
+            placeholderTextColor={colors.placeholder}
+            value={text}
+            onChangeText={setText}
+            onSelectionChange={handleSelectionChange}
+            autoFocus
+            textAlignVertical="top"
+          />
+
+          {/* Inline Calorie Overlays */}
+          <View style={styles.calorieOverlay}>
+            {lines.map((line, index) => {
+              const lineData = lineCalories[index];
+              if (!line.trim() || !lineData) return null;
+
+              return (
+                <View
+                  key={index}
+                  style={[
+                    styles.calorieLineContainer,
+                    { top: index * 22 + 16 }, // 22 is line height, 16 is top padding
+                  ]}
+                  pointerEvents={lineData.status === 'done' ? 'auto' : 'none'}
+                >
+                  {lineData.status === 'calculating' && (
+                    <Text style={[styles.calorieText, { color: colors.textSecondary }]}>
+                      calculating...
+                    </Text>
+                  )}
+                  {lineData.status === 'sources' && (
+                    <Text style={[styles.calorieText, { color: colors.textSecondary }]}>
+                      sources
+                    </Text>
+                  )}
+                  {lineData.status === 'done' && (
+                    <Pressable onPress={() => handleCalorieTap(index)}>
+                      <Text style={[styles.calorieText, { color: colors.caloriePositive }]}>
+                        + {lineData.calories} cal
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Bottom Calorie Progress Bar */}
+        <CalorieProgressBar
+          consumed={state.totalCalories}
+          goal={state.settings.dailyCalorieGoal}
+          onPress={() => textInputRef.current?.focus()}
+        />
+
+        {/* Nutrition Details Modal */}
+        <NutritionDetailsModal
+          visible={modalVisible}
+          meal={selectedMeal}
+          onClose={handleModalClose}
+          onUpdate={handleMealUpdate}
+        />
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
+  container: {
+    flex: 1,
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  topBar: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  todayText: {
+    fontSize: 28,
+    fontWeight: '700',
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
+  iconButton: {
+    padding: 4,
+  },
+  editorContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  textEditor: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    fontSize: 16,
+    fontWeight: '400',
+    lineHeight: 22,
+  },
+  calorieOverlay: {
     position: 'absolute',
+    right: 20,
+    top: 0,
+    paddingVertical: 16,
+  },
+  calorieLineContainer: {
+    position: 'absolute',
+    right: 0,
+    height: 22,
+    justifyContent: 'center',
+  },
+  calorieText: {
+    fontSize: 16,
+    fontWeight: '400',
   },
 });
